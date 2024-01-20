@@ -23,15 +23,18 @@ ONNXRUNTIMES : Dict[str, Tuple[str, str]] =\
 }
 if platform.system().lower() == 'linux' or platform.system().lower() == 'windows':
 	TORCH['cuda'] = 'cu118'
+	TORCH['cuda-nightly'] = 'cu121'
 	ONNXRUNTIMES['cuda'] = ('onnxruntime-gpu', '1.16.3')
+	ONNXRUNTIMES['cuda-nightly'] = ('onnxruntime-gpu', '1.17.0')
 	ONNXRUNTIMES['openvino'] = ('onnxruntime-openvino', '1.16.0')
 if platform.system().lower() == 'linux':
 	TORCH['rocm'] = 'rocm5.6'
-	ONNXRUNTIMES['directml'] = ('onnxruntime-directml', '1.16.3')
 	ONNXRUNTIMES['rocm'] = ('onnxruntime-rocm', '1.16.3')
 if platform.system().lower() == 'darwin':
 	ONNXRUNTIMES['coreml-legacy'] = ('onnxruntime-coreml', '1.13.1')
 	ONNXRUNTIMES['coreml-silicon'] = ('onnxruntime-silicon', '1.16.0')
+if platform.system().lower() == 'windows':
+	ONNXRUNTIMES['directml'] = ('onnxruntime-directml', '1.16.3')
 
 
 def cli() -> None:
@@ -66,19 +69,24 @@ def run(program : ArgumentParser) -> None:
 		torch_wheel = TORCH[torch]
 		onnxruntime = answers['onnxruntime']
 		onnxruntime_name, onnxruntime_version = ONNXRUNTIMES[onnxruntime]
+
 		subprocess.call([ 'pip', 'uninstall', 'torch', '-y', '-q' ])
 		if torch_wheel == 'default':
-			subprocess.call([ 'pip', 'install', '-r', 'requirements.txt' ])
+			subprocess.call([ 'pip', 'install', '-r', 'requirements.txt', '--force-reinstall' ])
 		else:
-			subprocess.call([ 'pip', 'install', '-r', 'requirements.txt', '--extra-index-url', 'https://download.pytorch.org/whl/' + torch_wheel ])
-		if onnxruntime != 'rocm':
+			subprocess.call([ 'pip', 'install', '-r', 'requirements.txt', '--extra-index-url', 'https://download.pytorch.org/whl/' + torch_wheel, '--force-reinstall' ])
+		if onnxruntime == 'rocm':
+			if python_id in [ 'cp39', 'cp310', 'cp311' ]:
+				wheel_name = 'onnxruntime_training-' + onnxruntime_version + '+rocm56-' + python_id + '-' + python_id + '-manylinux_2_17_x86_64.manylinux2014_x86_64.whl'
+				wheel_path = os.path.join(tempfile.gettempdir(), wheel_name)
+				wheel_url = 'https://download.onnxruntime.ai/' + wheel_name
+				subprocess.call([ 'curl', '--silent', '--location', '--continue-at', '-', '--output', wheel_path, wheel_url ])
+				subprocess.call([ 'pip', 'uninstall', wheel_path, '-y', '-q' ])
+				subprocess.call([ 'pip', 'install', wheel_path, '--force-reinstall' ])
+				os.remove(wheel_path)
+		else:
 			subprocess.call([ 'pip', 'uninstall', 'onnxruntime', onnxruntime_name, '-y', '-q' ])
-			subprocess.call([ 'pip', 'install', onnxruntime_name + '==' + onnxruntime_version ])
-		elif python_id in [ 'cp39', 'cp310', 'cp311' ]:
-			wheel_name = 'onnxruntime_training-' + onnxruntime_version + '+rocm56-' + python_id + '-' + python_id + '-manylinux_2_17_x86_64.manylinux2014_x86_64.whl'
-			wheel_path = os.path.join(tempfile.gettempdir(), wheel_name)
-			wheel_url = 'https://download.onnxruntime.ai/' + wheel_name
-			subprocess.call([ 'curl', '--silent', '--location', '--continue-at', '-', '--output', wheel_path, wheel_url ])
-			subprocess.call([ 'pip', 'uninstall', wheel_path, '-y', '-q' ])
-			subprocess.call([ 'pip', 'install', wheel_path ])
-			os.remove(wheel_path)
+			if onnxruntime == 'cuda-nightly':
+				subprocess.call([ 'pip', 'install', onnxruntime_name + '==' + onnxruntime_version, '--extra-index-url', 'https://pkgs.dev.azure.com/onnxruntime/onnxruntime/_packaging/onnxruntime-cuda-12/pypi/simple', '--force-reinstall' ])
+			else:
+				subprocess.call([ 'pip', 'install', onnxruntime_name + '==' + onnxruntime_version, '--force-reinstall' ])
